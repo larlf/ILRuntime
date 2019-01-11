@@ -24,6 +24,7 @@ namespace LitJson
         #region Fields
         private IList<JsonData>               inst_array;
         private bool                          inst_boolean;
+        private float                         inst_float;
         private double                        inst_double;
         private int                           inst_int;
         private long                          inst_long;
@@ -50,6 +51,11 @@ namespace LitJson
             get { return type == JsonType.Boolean; }
         }
 
+        ////////////////////////////// add/ //////////////////////////////////////
+        public bool IsFloat
+        {
+            get { return type == JsonType.Float; }
+        }
         public bool IsDouble {
             get { return type == JsonType.Double; }
         }
@@ -73,6 +79,20 @@ namespace LitJson
         public ICollection<string> Keys {
             get { EnsureDictionary (); return inst_object.Keys; }
         }
+
+		/// <summary>
+		/// 检查是否包含有一个Key
+		/// </summary>
+		/// <param name="key"></param>
+		/// <returns></returns>
+	    public bool ContainsKey(string key)
+	    {
+		    EnsureDictionary();
+		    if (inst_object.ContainsKey(key))
+			    return true;
+
+		    return false;
+	    }
         #endregion
 
 
@@ -148,6 +168,11 @@ namespace LitJson
 
         bool IJsonWrapper.IsBoolean {
             get { return IsBoolean; }
+        }
+        ////////////////////////////// add/ //////////////////////////////////////
+        bool IJsonWrapper.IsFloat
+        {
+            get { return IsFloat; }
         }
 
         bool IJsonWrapper.IsDouble {
@@ -250,7 +275,12 @@ namespace LitJson
         public JsonData this[string prop_name] {
             get {
                 EnsureDictionary ();
-                return inst_object[prop_name];
+
+				//加入了对Key的检查
+				if(inst_object.ContainsKey(prop_name))
+					return inst_object[prop_name];
+
+	            return null;
             }
 
             set {
@@ -315,6 +345,12 @@ namespace LitJson
             type = JsonType.Boolean;
             inst_boolean = boolean;
         }
+        ////////////////////////////// add/ //////////////////////////////////////
+        public JsonData(float number)
+        {
+            type = JsonType.Float;
+            inst_float = number;
+        }
 
         public JsonData (double number)
         {
@@ -342,6 +378,12 @@ namespace LitJson
                 return;
             }
 
+            if (obj is Single)
+            {
+                type = JsonType.Float;
+                inst_float = (float)obj;
+                return;
+            }
             if (obj is Double) {
                 type = JsonType.Double;
                 inst_double = (double) obj;
@@ -411,14 +453,17 @@ namespace LitJson
         {
             if (data.type != JsonType.Boolean)
                 throw new InvalidCastException (
-                    "Instance of JsonData doesn't hold a double");
+                    "Instance of JsonData doesn't hold a boolean");
 
             return data.inst_boolean;
         }
 
         public static explicit operator Double (JsonData data)
         {
-            if (data.type != JsonType.Double)
+			if (data.type == JsonType.Int)
+				return data.inst_double;
+
+			if (data.type != JsonType.Double)
                 throw new InvalidCastException (
                     "Instance of JsonData doesn't hold a double");
 
@@ -427,21 +472,51 @@ namespace LitJson
 
         public static explicit operator Int32 (JsonData data)
         {
-            if (data.type != JsonType.Int)
-                throw new InvalidCastException (
-                    "Instance of JsonData doesn't hold an int");
+			switch (data.type)
+			{
+				case JsonType.Long:
+					return (int)data.inst_long;
+				case JsonType.Int:
+					return data.inst_int;
+				case JsonType.Float:
+					return (int)data.inst_float;
+				case JsonType.Double:
+					return (int)data.inst_double;
+			}
 
-            return data.inst_int;
+            throw new InvalidCastException (
+                "Instance of JsonData doesn't hold an int");
         }
 
         public static explicit operator Int64 (JsonData data)
         {
-            if (data.type != JsonType.Long)
-                throw new InvalidCastException (
-                    "Instance of JsonData doesn't hold an int");
+			switch(data.type)
+			{
+				case JsonType.Long:
+					return data.inst_long;
+				case JsonType.Int:
+					return data.inst_int;
+				case JsonType.Float:
+					return (long)data.inst_float;
+				case JsonType.Double:
+					return (long)data.inst_double;
+			}
 
-            return data.inst_long;
+            throw new InvalidCastException (
+                "Instance of JsonData doesn't hold an int");
         }
+
+		public static explicit operator Single(JsonData data)
+		{
+			if (data.type == JsonType.Int)
+				return data.inst_float;
+
+			if (data.type != JsonType.Float)
+				throw new InvalidCastException(
+					"Instance of JsonData doesn't hold an float");
+
+			return data.inst_float;
+		}
 
         public static explicit operator String (JsonData data)
         {
@@ -518,55 +593,97 @@ namespace LitJson
 
 
         #region IJsonWrapper Methods
+
+		/// <summary>
+		/// 返回Object类型
+		/// </summary>
+		/// <returns></returns>
+		public object GetValue()
+		{
+			switch (type)
+			{
+				case JsonType.String:
+					return inst_string;
+				case JsonType.Int:
+					return inst_int;
+				case JsonType.Long:
+					return inst_long;
+				case JsonType.Float:
+					return inst_float;
+				case JsonType.Double:
+					return inst_double;
+				case JsonType.Boolean:
+					return inst_boolean;
+
+				case JsonType.Object:
+				case JsonType.Array:
+					break;
+			}
+
+			throw new JsonException("GetValue() unsupport type : " + type);
+			//return null;
+		}
+
         bool IJsonWrapper.GetBoolean ()
         {
-            if (type != JsonType.Boolean)
-                throw new InvalidOperationException (
-                    "JsonData instance doesn't hold a boolean");
-
+            if (type == JsonType.Boolean)
             return inst_boolean;
+
+	        return Convert.ToBoolean(GetValue());
         }
 
-        double IJsonWrapper.GetDouble ()
+		////////////////////////////// add/ //////////////////////////////////////
+		double IJsonWrapper.GetFloat()
         {
-            if (type != JsonType.Double)
-                throw new InvalidOperationException (
-                    "JsonData instance doesn't hold a double");
+            if (type == JsonType.Float)
+            return inst_float;
 
+	        return Convert.ToSingle(GetValue());
+        }
+
+		double IJsonWrapper.GetDouble ()
+        {
+            if (type == JsonType.Double)
             return inst_double;
+
+	        return Convert.ToDouble(GetValue());
         }
 
-        int IJsonWrapper.GetInt ()
+		int IJsonWrapper.GetInt ()
         {
-            if (type != JsonType.Int)
-                throw new InvalidOperationException (
-                    "JsonData instance doesn't hold an int");
-
+            if (type == JsonType.Int)
             return inst_int;
-        }
 
-        long IJsonWrapper.GetLong ()
+			return Convert.ToInt32(GetValue());
+		}
+
+		long IJsonWrapper.GetLong ()
         {
-            if (type != JsonType.Long)
-                throw new InvalidOperationException (
-                    "JsonData instance doesn't hold a long");
-
+            if (type == JsonType.Long)
             return inst_long;
-        }
 
-        string IJsonWrapper.GetString ()
+			return Convert.ToInt64(GetValue());
+		}
+
+		string IJsonWrapper.GetString ()
         {
-            if (type != JsonType.String)
-                throw new InvalidOperationException (
-                    "JsonData instance doesn't hold a string");
-
+            if (type == JsonType.String)
             return inst_string;
-        }
 
-        void IJsonWrapper.SetBoolean (bool val)
+			return Convert.ToString(GetValue());
+		}
+
+		void IJsonWrapper.SetBoolean (bool val)
         {
             type = JsonType.Boolean;
             inst_boolean = val;
+            json = null;
+        }
+		////////////////////////////// add/ //////////////////////////////////////
+		void IJsonWrapper.SetFloat(float val)
+        {
+            type = JsonType.Float;
+            inst_float = val;
             json = null;
         }
 
@@ -761,6 +878,13 @@ namespace LitJson
                 return;
             }
 
+            ///////////////////////////////// add /////////////////////////////
+            if (obj.IsFloat)
+            {
+                writer.Write(obj.GetFloat());
+                return;
+            }
+
             if (obj.IsInt) {
                 writer.Write (obj.GetInt ());
                 return;
@@ -842,7 +966,10 @@ namespace LitJson
                 return this.inst_int.Equals (x.inst_int);
 
             case JsonType.Long:
-                return this.inst_long.Equals (x.inst_long);
+                return this.inst_long.Equals(x.inst_long);
+            ////////////////////////////// add/ //////////////////////////////////////
+            case JsonType.Float:
+                return this.inst_float.Equals(x.inst_float);
 
             case JsonType.Double:
                 return this.inst_double.Equals (x.inst_double);
@@ -887,6 +1014,10 @@ namespace LitJson
 
             case JsonType.Long:
                 inst_long = default (Int64);
+                break;
+            ////////////////////////////// add/ //////////////////////////////////////
+            case JsonType.Float:
+                inst_float = default(Single);
                 break;
 
             case JsonType.Double:
@@ -935,6 +1066,10 @@ namespace LitJson
 
             case JsonType.Boolean:
                 return inst_boolean.ToString ();
+
+            ////////////////////////////// add/ //////////////////////////////////////
+            case JsonType.Float:
+                return inst_float.ToString();
 
             case JsonType.Double:
                 return inst_double.ToString ();

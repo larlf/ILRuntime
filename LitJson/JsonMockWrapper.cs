@@ -21,20 +21,26 @@ namespace LitJson
     {
         public bool IsArray   { get { return false; } }
         public bool IsBoolean { get { return false; } }
+        ////////////////////////////// add/ //////////////////////////////////////
+        public bool IsFloat   { get { return false; } }
         public bool IsDouble  { get { return false; } }
         public bool IsInt     { get { return false; } }
         public bool IsLong    { get { return false; } }
         public bool IsObject  { get { return false; } }
         public bool IsString  { get { return false; } }
 
-        public bool     GetBoolean ()  { return false; }
+        public bool GetBoolean() { return false; }
+        ////////////////////////////// add/ //////////////////////////////////////
+        public double GetFloat() { return 0.0; }
         public double   GetDouble ()   { return 0.0; }
         public int      GetInt ()      { return 0; }
         public JsonType GetJsonType () { return JsonType.None; }
         public long     GetLong ()     { return 0L; }
         public string   GetString ()   { return ""; }
 
-        public void SetBoolean  (bool val)      {}
+        public void SetBoolean(bool val) { }
+        ////////////////////////////// add/ //////////////////////////////////////
+        public void SetFloat(float val) { }
         public void SetDouble   (double val)    {}
         public void SetInt      (int val)       {}
         public void SetJsonType (JsonType type) {}

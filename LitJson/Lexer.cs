@@ -41,7 +41,8 @@ namespace LitJson
         private int           input_buffer;
         private int           input_char;
         private TextReader    reader;
-        private int           state;
+		private string        reader_text;
+		private int           state;
         private StringBuilder string_buffer;
         private string        string_value;
         private int           token;
@@ -80,7 +81,7 @@ namespace LitJson
             PopulateFsmTables ();
         }
 
-        public Lexer (TextReader reader)
+        public Lexer (TextReader reader, string text)
         {
             allow_comments = true;
             allow_single_quoted_strings = true;
@@ -90,6 +91,7 @@ namespace LitJson
             state = 1;
             end_of_input = false;
             this.reader = reader;
+			this.reader_text = text;
 
             fsm_context = new FsmContext ();
             fsm_context.L = this;
@@ -882,7 +884,10 @@ namespace LitJson
                 handler = fsm_handler_table[state - 1];
 
                 if (! handler (fsm_context))
+				{
+					this.ShowErrorText();
                     throw new JsonException (input_char);
+				}
 
                 if (end_of_input)
                     return false;
@@ -908,5 +913,46 @@ namespace LitJson
         {
             input_buffer = input_char;
         }
-    }
+
+		/// <summary>
+		/// 用于显示错误的位置
+		/// </summary>
+		private void ShowErrorText()
+		{
+			if (this.reader != null && this.reader_text != null)
+			{
+				//取得还有的字符串，算出出错的位置
+				string lastStr = this.reader.ReadToEnd();
+				int pos = this.reader_text.Length - lastStr.Length;
+
+				//计算行号并找到这一行的开始
+				int lineNum = 1;
+				int startPos = 0;
+				for (var i = 0; i < pos; ++i)
+				{
+					if (this.reader_text[i] == '\n')
+					{
+						lineNum++;
+						startPos = i + 1;
+					}
+				}
+
+				//取出这一行的内容
+				StringBuilder sb = new StringBuilder();
+				for (var i = startPos; i < this.reader_text.Length; ++i)
+				{
+					if (this.reader_text[i] == '\n')
+						break;
+
+					sb.Append(this.reader_text[i]);
+				}
+
+				throw new JsonException("Read json error at (" + lineNum + "," + (pos - startPos) + ") : " + sb.ToString().Trim());
+			}
+			else
+			{
+                throw new JsonException("Reader is null");
+			}
+		}
+	}
 }

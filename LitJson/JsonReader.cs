@@ -30,6 +30,7 @@ namespace LitJson
 
         Int,
         Long,
+        Single,
         Double,
 
         String,
@@ -54,6 +55,7 @@ namespace LitJson
         private bool          parser_return;
         private bool          read_started;
         private TextReader    reader;
+		private string        reader_text;
         private bool          reader_is_owned;
         private bool          skip_non_members;
         private object        token_value;
@@ -102,17 +104,20 @@ namespace LitJson
         }
 
         public JsonReader (string json_text) :
-            this (new StringReader (json_text), true)
+            this (json_text, new StringReader (json_text), true)
         {
         }
 
-        public JsonReader (TextReader reader) :
-            this (reader, false)
+        public JsonReader (string json_text, TextReader reader) :
+            this (json_text, reader, false)
         {
         }
 
-        private JsonReader (TextReader reader, bool owned)
+        private JsonReader (string text, TextReader reader, bool owned)
         {
+			//记录一下原始数据
+			this.reader_text = text;
+
             if (reader == null)
                 throw new ArgumentNullException ("reader");
 
@@ -124,7 +129,7 @@ namespace LitJson
             automaton_stack.Push ((int) ParserToken.End);
             automaton_stack.Push ((int) ParserToken.Text);
 
-            lexer = new Lexer (reader);
+            lexer = new Lexer (reader, text);
 
             end_of_input = false;
             end_of_json  = false;
@@ -440,8 +445,11 @@ namespace LitJson
                 if (current_symbol == current_input) {
                     if (! ReadToken ()) {
                         if (automaton_stack.Peek () != (int) ParserToken.End)
-                            throw new JsonException (
+						{
+							this.ShowErrorText();
+							throw new JsonException (
                                 "Input doesn't evaluate to proper JSON text");
+						}
 
                         if (parser_return)
                             return true;
@@ -458,6 +466,7 @@ namespace LitJson
                         parse_table[current_symbol][current_input];
 
                 } catch (KeyNotFoundException e) {
+					this.ShowErrorText();
                     throw new JsonException ((ParserToken) current_input, e);
                 }
 
@@ -468,6 +477,47 @@ namespace LitJson
                     automaton_stack.Push (entry_symbols[i]);
             }
         }
+
+		/// <summary>
+		/// 用于显示错误的位置
+		/// </summary>
+		public void ShowErrorText()
+		{
+			if(this.reader!=null && this.reader_text!=null)
+			{
+				//取得还有的字符串，算出出错的位置
+				string lastStr = this.reader.ReadToEnd();
+				int pos = this.reader_text.Length - lastStr.Length;
+
+				//计算行号并找到这一行的开始
+				int lineNum = 1;
+				int startPos = 0;
+				for(var i=0; i<pos; ++i)
+				{
+					if (this.reader_text[i] == '\n')
+					{
+						lineNum++;
+						startPos = i + 1;
+					}
+				}
+
+				//取出这一行的内容
+				StringBuilder sb = new StringBuilder();
+				for(var i=startPos; i<this.reader_text.Length; ++i)
+				{
+					if (this.reader_text[i] == '\n')
+						break;
+
+					sb.Append(this.reader_text[i]);
+				}
+
+				throw new JsonException("Read json error at (" + lineNum + "," + (pos - startPos) + ") : " + sb.ToString().Trim());
+			}
+			else
+			{
+                throw new JsonException("Reader is null");
+			}
+		}
 
     }
 }

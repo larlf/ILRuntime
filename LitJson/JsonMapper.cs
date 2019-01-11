@@ -327,7 +327,7 @@ namespace LitJson
             return op;
         }
 
-        private static object ReadValue (Type inst_type, JsonReader reader)
+        private static object ReadValue (Type inst_type, JsonReader reader, Func<string, object> createFun, Func<string, Type> typeFun, string prefix)
         {
             reader.Read ();
 
@@ -343,12 +343,14 @@ namespace LitJson
                     return null;
                 }
 
-                throw new JsonException (String.Format (
+				reader.ShowErrorText();
+				throw new JsonException (String.Format (
                             "Can't assign null to an instance of type {0}",
                             inst_type));
             }
 
-            if (reader.Token == JsonToken.Double ||
+            if (reader.Token == JsonToken.Single ||
+                reader.Token == JsonToken.Double ||
                 reader.Token == JsonToken.Int ||
                 reader.Token == JsonToken.Long ||
                 reader.Token == JsonToken.String ||
@@ -396,8 +398,69 @@ namespace LitJson
                 if (conv_op != null)
                     return conv_op.Invoke (null,
                                            new object[] { reader.Value });
+                
+                //////////////////////////////////// ADD ////////////////////////////////////
+                // 类型转换
+                if (value_type.Name == "String" && json_type.Name != "String")
+                {
+                    return reader.Value.ToString();
+                }
+                else if (json_type.Name == "String")
+                {
+                    if (value_type.Name == "Int32")
+                    {
+                        int re = 0;
+                        int.TryParse(reader.Value as string, out re);
+                        return re;
+                    }
+                    else if (value_type.Name == "Single")
+                    {
+                        float re = 0;
+                        float.TryParse(reader.Value as string, out re);
+                        return re;
+                    }
+                    else if (value_type.Name == "Double")
+                    {
+                        double re = 0;
+                        double.TryParse(reader.Value as string, out re);
+                        return re;
+                    }
+                }
+				else if(json_type.Name=="Int32")
+				{
+					if (value_type.Name == "Double")
+					{
+						return (double)(reader.Value);
+					}
+					else if (value_type.Name == "Single")
+					{
+						return Convert.ToSingle((int)(reader.Value));
+					}
+					else if (value_type.Name == "Int64")
+					{
+						return Convert.ToInt64((int)(reader.Value));
+					}
+				}
+                else if (value_type.Name == "Int32" && json_type.Name == "Double")
+                {
+                    return Convert.ToInt32((double)(reader.Value));
+                }
 
-                // No luck
+                else if (value_type.Name == "Single" && json_type.Name == "Double")
+                {
+                    return Convert.ToSingle((double)(reader.Value));
+                }
+                else if (value_type.Name == "Int32" && json_type.Name == "Single")
+                {
+                    return Convert.ToInt32((float)(reader.Value));
+                }
+                else if (value_type.Name == "Double" && json_type.Name == "Single")
+                {
+                    return Convert.ToDouble((float)(reader.Value));
+                }
+				////////////////////////////////// ADD OVER /////////////////////////////////
+				// No luck
+				reader.ShowErrorText();
                 throw new JsonException (String.Format (
                         "Can't assign value '{0}' (type {1}) to type {2}",
                         reader.Value, json_type, inst_type));
@@ -411,9 +474,12 @@ namespace LitJson
                 ArrayMetadata t_data = array_metadata[inst_type];
 
                 if (! t_data.IsArray && ! t_data.IsList)
-                    throw new JsonException (String.Format (
+				{
+					reader.ShowErrorText();
+					throw new JsonException (String.Format (
                             "Type {0} can't act as an array",
                             inst_type));
+				}
 
                 IList list;
                 Type elem_type;
@@ -427,7 +493,7 @@ namespace LitJson
                 }
 
                 while (true) {
-                    object item = ReadValue (elem_type, reader);
+                    object item = ReadValue (elem_type, reader, createFun, typeFun, (prefix==null)?null:(prefix+".Item"));
                     if (item == null && reader.Token == JsonToken.ArrayEnd)
                         break;
                     var rt = elem_type is ILRuntime.Reflection.ILRuntimeWrapperType ? ((ILRuntime.Reflection.ILRuntimeWrapperType)elem_type).RealType : elem_type;
@@ -445,9 +511,27 @@ namespace LitJson
                     instance = list;
 
             } else if (reader.Token == JsonToken.ObjectStart) {
-                AddObjectMetadata (value_type);
-                ObjectMetadata t_data = object_metadata[value_type];
-                if (value_type is ILRuntime.Reflection.ILRuntimeType)
+
+				//处理自定义类型
+				if (typeFun != null)
+				{
+					Type realType = typeFun(prefix);
+					if (realType != null)
+						value_type = realType;
+				}
+
+				AddObjectMetadata(value_type);
+
+				ObjectMetadata t_data = object_metadata[value_type];
+
+				//处理自定义类型
+				if(createFun!=null)
+				{
+					instance = createFun(prefix);
+					if(instance==null)
+						instance = Activator.CreateInstance(value_type);
+				}
+				else if (value_type is ILRuntime.Reflection.ILRuntimeType)
                     instance = ((ILRuntime.Reflection.ILRuntimeType)value_type).ILType.Instantiate();
                 else
                 {
@@ -455,6 +539,7 @@ namespace LitJson
                         value_type = ((ILRuntime.Reflection.ILRuntimeWrapperType)value_type).RealType;
                     instance = Activator.CreateInstance(value_type);
                 }
+
                 while (true) {
                     reader.Read ();
 
@@ -468,8 +553,8 @@ namespace LitJson
                             t_data.Properties[property];
 
                         if (prop_data.IsField) {
-                            ((FieldInfo) prop_data.Info).SetValue (
-                                instance, ReadValue (prop_data.Type, reader));
+							((FieldInfo)prop_data.Info).SetValue(
+								instance, ReadValue(prop_data.Type, reader, createFun, typeFun, (prefix == null) ? null : (prefix + "." + prop_data.Info.Name)));
                         } else {
                             PropertyInfo p_info =
                                 (PropertyInfo) prop_data.Info;
@@ -477,17 +562,18 @@ namespace LitJson
                             if (p_info.CanWrite)
                                 p_info.SetValue (
                                     instance,
-                                    ReadValue (prop_data.Type, reader),
+                                    ReadValue (prop_data.Type, reader, createFun, typeFun, (prefix == null) ? null : (prefix + "." + prop_data.Info.Name)),
                                     null);
                             else
-                                ReadValue (prop_data.Type, reader);
+                                ReadValue (prop_data.Type, reader, createFun, typeFun, (prefix == null) ? null : (prefix + "." + prop_data.Info.Name));
                         }
 
                     } else {
                         if (! t_data.IsDictionary) {
 
                             if (! reader.SkipNonMembers) {
-                                throw new JsonException (String.Format (
+								reader.ShowErrorText();
+								throw new JsonException (String.Format (
                                         "The type {0} doesn't have the " +
                                         "property '{1}'",
                                         inst_type, property));
@@ -500,7 +586,7 @@ namespace LitJson
                         var rt = t_data.ElementType is ILRuntime.Reflection.ILRuntimeWrapperType ? ((ILRuntime.Reflection.ILRuntimeWrapperType)t_data.ElementType).RealType : t_data.ElementType;
                         ((IDictionary) instance).Add (
                             property, rt.CheckCLRTypes(ReadValue (
-                                t_data.ElementType, reader)));
+                                t_data.ElementType, reader, createFun, typeFun, (prefix == null) ? null : (prefix + ".Item"))));
                     }
 
                 }
@@ -760,6 +846,13 @@ namespace LitJson
                 return;
             }
 
+            ///////////////////////////////////// add /////////////////////////////////////////
+            if (obj is Single)
+            {
+                writer.Write((float)obj);
+                return;
+            }
+
             if (obj is Int32) {
                 writer.Write ((int) obj);
                 return;
@@ -898,9 +991,9 @@ namespace LitJson
                 delegate { return new JsonData (); }, reader);
         }
 
-        public static JsonData ToObject (TextReader reader)
+        public static JsonData ToObject (string text, TextReader reader)
         {
-            JsonReader json_reader = new JsonReader (reader);
+            JsonReader json_reader = new JsonReader (text, reader);
 
             return (JsonData) ToWrapper (
                 delegate { return new JsonData (); }, json_reader);
@@ -914,22 +1007,35 @@ namespace LitJson
 
         public static T ToObject<T> (JsonReader reader)
         {
-            return (T) ReadValue (typeof (T), reader);
+            return (T) ReadValue (typeof (T), reader, null, null, "");
         }
 
-        public static T ToObject<T> (TextReader reader)
+        public static T ToObject<T> (string text, TextReader reader)
         {
-            JsonReader json_reader = new JsonReader (reader);
+            JsonReader json_reader = new JsonReader (text, reader);
 
-            return (T) ReadValue (typeof (T), json_reader);
+            return (T) ReadValue (typeof (T), json_reader, null, null, "");
         }
 
         public static T ToObject<T> (string json)
         {
             JsonReader reader = new JsonReader (json);
 
-            return (T) ReadValue (typeof (T), reader);
+            return (T) ReadValue (typeof (T), reader, null, null, "");
         }
+
+		public static object ToObject(Type type, string json)
+		{
+			JsonReader reader = new JsonReader (json);
+			return ReadValue (type, reader, null, null, "");
+		}
+
+		public static T ToCustomObject<T>(string json, Func<string, object> createFun, Func<string, Type> typeFun)
+		{
+			JsonReader reader = new JsonReader(json);
+
+			return (T)ReadValue(typeof(T), reader, createFun, typeFun, "Root");
+		}
 
         public static IJsonWrapper ToWrapper (WrapperFactory factory,
                                               JsonReader reader)
@@ -1009,7 +1115,7 @@ namespace LitJson
             System.String json = (System.String)typeof(System.String).CheckCLRTypes(StackObject.ToObject(ptr_of_this_method, __domain, mStack));
             intp.Free(ptr_of_this_method);
             var type = method.GenericArguments[0].ReflectionType;
-            var result_of_this_method = ReadValue(type, new JsonReader(json));
+            var result_of_this_method = ReadValue(type, new JsonReader(json), null, null, "");
 
             return ILIntepreter.PushObject(__ret, mStack, result_of_this_method);
         }
@@ -1023,7 +1129,7 @@ namespace LitJson
             JsonReader json = (JsonReader)typeof(JsonReader).CheckCLRTypes(StackObject.ToObject(ptr_of_this_method, __domain, mStack));
             intp.Free(ptr_of_this_method);
             var type = method.GenericArguments[0].ReflectionType;
-            var result_of_this_method = ReadValue(type, json);
+            var result_of_this_method = ReadValue(type, json, null, null, "");
 
             return ILIntepreter.PushObject(__ret, mStack, result_of_this_method);
         }
@@ -1037,7 +1143,8 @@ namespace LitJson
             TextReader json = (TextReader)typeof(TextReader).CheckCLRTypes(StackObject.ToObject(ptr_of_this_method, __domain, mStack));
             intp.Free(ptr_of_this_method);
             var type = method.GenericArguments[0].ReflectionType;
-            var result_of_this_method = ReadValue(type, new JsonReader(json));
+			//ILR下text去哪取，现在还没有解决，JsonReader的参数中先用空字符串
+            var result_of_this_method = ReadValue(type, new JsonReader("", json), null, null, "");
 
             return ILIntepreter.PushObject(__ret, mStack, result_of_this_method);
         }

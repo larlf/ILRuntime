@@ -50,7 +50,8 @@ namespace LitJson
         private StringBuilder        inst_string_builder;
         private bool                 pretty_print;
         private bool                 validate;
-        private TextWriter           writer;
+		private bool                 hex_string;
+		private TextWriter           writer;
         #endregion
 
 
@@ -67,6 +68,12 @@ namespace LitJson
             get { return pretty_print; }
             set { pretty_print = value; }
         }
+
+		public bool HexString
+		{
+			get { return hex_string; }
+			set { hex_string = value; }
+		}
 
         public TextWriter TextWriter {
             get { return writer; }
@@ -260,10 +267,17 @@ namespace LitJson
                     continue;
                 }
 
-                // Default, turn into a \uXXXX sequence
-                IntToHex ((int) str[i], hex_seq);
-                writer.Write ("\\u");
-                writer.Write (hex_seq);
+				//对汉字是否要进行转码处理
+				if (hex_string)
+				{
+					IntToHex((int)str[i], hex_seq);
+					writer.Write("\\u");
+					writer.Write(hex_seq);
+				}
+				else
+				{
+					writer.Write(str[i]);
+				}
             }
 
             writer.Write ('"');
@@ -328,6 +342,22 @@ namespace LitJson
             if (str.IndexOf ('.') == -1 &&
                 str.IndexOf ('E') == -1)
                 writer.Write (".0");
+
+            context.ExpectingValue = false;
+        }
+
+        ////////////////////////////// add/ //////////////////////////////////////
+        public void Write(float number)
+        {
+            DoValidation(Condition.Value);
+            PutNewline();
+
+            string str = Convert.ToString(number, number_format);
+            Put(str);
+
+            if (str.IndexOf('.') == -1 &&
+                str.IndexOf('E') == -1)
+                writer.Write(".0");
 
             context.ExpectingValue = false;
         }
