@@ -53,6 +53,9 @@ namespace ILRuntime.Runtime.Enviorment
         Dictionary<string, byte[]> references = new Dictionary<string, byte[]>();
         DebugService debugService;
 
+        //当前的运行环境
+        public ILIntepreter CurrentIntepreter;
+
         /// <summary>
         /// Determine if invoking unbinded CLR method(using reflection) is allowed
         /// </summary>
@@ -1097,10 +1100,17 @@ namespace ILRuntime.Runtime.Enviorment
                 ILIntepreter inteptreter = RequestILIntepreter();
                 try
                 {
+                    //先设为当前值
+                    CurrentIntepreter = inteptreter;
+
                     res = inteptreter.Run((ILMethod)m, instance, p);
                 }
                 finally
                 {
+                    //结束的时候需要清理一下
+                    if (CurrentIntepreter == inteptreter)
+                        CurrentIntepreter = null;
+
                     FreeILIntepreter(inteptreter);
                 }
             }
